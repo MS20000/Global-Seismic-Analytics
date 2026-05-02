@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="hy">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Seismic Analytics - Land vs Water</title>
+    <!-- Leaflet-ի CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+            background-color: #121212;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* Բեռնման Էկրան (Loading) */
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #121212;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #333;
+            border-top-color: #d9534f;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Ձախ վահանակ (Sidebar) */
+        #sidebar {
+            width: 380px;
+            background: #1e1e1e;
+            overflow-y: auto;
+            border-right: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+        }
+
+        #sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #sidebar::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+
+        .section-title {
+            margin: 0;
+            padding: 12px 15px;
+            background: #2a2a2a;
+            font-size: 15px;
+            color: #4db8ff;
+            border-bottom: 1px solid #444;
+            border-top: 1px solid #444;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            transition: 0.2s;
+        }
+
+        .section-title:first-child {
+            border-top: none;
+        }
+
+        .section-title:hover {
+            background: #333;
+        }
+
+        .section-title::after {
+            content: '▼';
+            font-size: 10px;
+            color: #888;
+            transition: 0.3s;
+        }
+
+        .section-title.collapsed::after {
+            transform: rotate(-90deg);
+        }
+
+        .collapsible-content {
+            display: block;
+        }
+
+        .collapsible-content.hidden {
+            display: none !important;
+        }
+
+        .panel-section {
+            padding: 15px;
+            border-bottom: 1px solid #222;
+        }
+
+        .region-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .btn-region {
+            background-color: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: 0.2s;
+            font-size: 12px;
+        }
+
+        .btn-region:hover {
+            background-color: #555;
+        }
+
+        .btn-region.active {
+            background-color: #4db8ff;
+            color: #000;
+            font-weight: bold;
+        }
+
+        #top10-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #top10-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #top10-list::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 3px;
+        }
+
+        #top10-list li {
+            padding: 10px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        #top10-list li:hover {
+            background: #2a2a2a;
+        }
+
+        .mag-badge {
+            background: #d9534f;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 12px;
+            min-width: 25px;
+            text-align: center;
+        }
+
+        .eq-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .eq-place {
+            color: #ddd;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 230px;
+        }
+
+        .eq-date {
+            font-size: 11px;
+            color: #888;
+            margin-top: 3px;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 200px;
+            margin-top: 10px;
+        }
+
+        #energy-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #ccc;
+        }
+
+        /* Քարտեզ և Ֆիլտրեր */
+        #map-container {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 30, 30, 0.95);
+            padding: 15px;
+            z-index: 1000;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7);
+            width: 240px;
+        }
+
+        .controls h4 {
+            margin: 0 0 8px 0;
+            font-size: 13px;
+            text-align: center;
+            color: #f0ad4e;
+        }
+
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 15px;
+        }
+
+        .btn-filter {
+            background-color: #444;
+            color: white;
+            border: none;
+            padding: 6px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 12px;
+            transition: 0.2s;
+        }
+
+        .btn-filter:hover {
+            background-color: #555;
+        }
+
+        .btn-filter.active {
+            background-color: #d9534f;
+            font-weight: bold;
+        }
+
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .slider-group label {
+            font-size: 12px;
+            text-align: center;
+            color: #ddd;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .data-counter {
+            font-size: 11px;
+            text-align: center;
+            color: #888;
+            border-top: 1px solid #444;
+            padding-top: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Բեռնման Էկրան -->
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <h3 style="color:#ddd; margin:0;">Աշխարհագրական Վերլուծություն...</h3>
+        <p style="color:#888; font-size:13px;">Ստուգվում են ցամաքային և օվկիանոսային էպիկենտրոնները</p>
+    </div>
+
+    <!-- Ձախ Վահանակ -->
+    <div id="sidebar">
+        <h2 class="section-title" onclick="toggleSection(this, 'region-content')">🌍 Ռեգիոնալ Վերլուծություն</h2>
+        <div id="region-content" class="collapsible-content panel-section">
+            <div class="region-grid">
+                <button class="btn-region active" id="reg-global" onclick="flyToRegion('global')">Գլոբալ Քարտեզ</button>
+                <button class="btn-region" id="reg-europe" onclick="flyToRegion('europe')">Եվրոպա / Միջերկրական</button>
+                <button class="btn-region" id="reg-asia" onclick="flyToRegion('asia')">Արևելյան Ասիա</button>
+                <button class="btn-region" id="reg-america" onclick="flyToRegion('america')">Հս. Ամերիկա</button>
+            </div>
+        </div>
+
+        <h2 class="section-title" onclick="toggleSection(this, 'top10-content')">🔥 Թոփ 10 (Տեսանելի Գոտում)</h2>
+        <div id="top10-content" class="collapsible-content">
+            <ul id="top10-list"></ul>
+        </div>
+
+        <h2 class="section-title" onclick="toggleSection(this, 'chart-content')">📊 Մագնիտուդի Հաճախականություն</h2>
+        <div id="chart-content" class="collapsible-content panel-section">
+            <div class="chart-container">
+                <canvas id="magChart"></canvas>
+            </div>
+        </div>
+
+        <h2 class="section-title" onclick="toggleSection(this, 'energy-content')">⚡ Սեյսմիկ Էներգիա</h2>
+        <div id="energy-content" class="collapsible-content panel-section">
+            <div id="energy-text"></div>
+        </div>
+    </div>
+
+    <!-- Քարտեզ և Կառավարման Վահանակ -->
+    <div id="map-container">
+        <div class="controls">
+            <!-- Տեղանքի Ֆիլտր -->
+            <h4>Տեղանք (Ցամաք / Ջուր)</h4>
+            <div class="btn-group">
+                <button id="btn-loc-all" class="btn-filter active" onclick="setLocFilter('all')">Բոլորը</button>
+                <button id="btn-loc-land" class="btn-filter" onclick="setLocFilter('land')">🌳 Միայն Ցամաքում</button>
+                <button id="btn-loc-water" class="btn-filter" onclick="setLocFilter('water')">🌊 Միայն
+                    Օվկիանոսում</button>
+            </div>
+
+            <h4>Խորության Ֆիլտր</h4>
+            <div class="btn-group">
+                <button id="btn-depth-all" class="btn-filter active" onclick="setDepthFilter('all')">Բոլորը</button>
+                <button id="btn-depth-shallow" class="btn-filter" onclick="setDepthFilter('shallow')">Մակերեսային (< 70
+                        կմ)</button>
+                        <button id="btn-depth-deep" class="btn-filter" onclick="setDepthFilter('deep')">Խորքային (> 70
+                            կմ)</button>
+            </div>
+
+            <h4>Մագնիտուդի Ֆիլտր</h4>
+            <div class="slider-group">
+                <label id="mag-label">Մինիմում: 4.5</label>
+                <input type="range" id="mag-slider" min="4.5" max="8.0" step="0.1" value="4.5"
+                    oninput="setMagFilter(this.value)">
+            </div>
+
+            <div class="data-counter">
+                Էկրանին տեսանելի: <strong id="data-count" style="color:white;">0</strong>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <!-- Գրադարաններ -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <script>
+        function toggleSection(headerElement, contentId) {
+            headerElement.classList.toggle('collapsed');
+            document.getElementById(contentId).classList.toggle('hidden');
+        }
+
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap, © CARTO'
+        }).addTo(map);
+
+        const earthquakesApiUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson';
+        const worldBordersUrl = 'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson';
+
+        let allEarthquakes = [];
+        let globalFilteredData = [];
+        let heatLayer = null;
+        let activePopup = null;
+        let myChart = null;
+
+        let currentFilters = { depth: 'all', minMag: 4.5, location: 'all' };
+
+        const regions = {
+            global: { coords: [20, 0], zoom: 2 },
+            europe: { coords: [42, 15], zoom: 4 },
+            asia: { coords: [35, 105], zoom: 4 },
+            america: { coords: [40, -115], zoom: 4 }
+        };
+
+        function initChart() {
+            const ctx = document.getElementById('magChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['4.5 - 4.9', '5.0 - 5.9', '6.0 - 6.9', '7.0+'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: ['#f0ad4e', '#fc8d59', '#d73027', '#800000'],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, grid: { color: '#333' }, ticks: { color: '#888' } }, x: { grid: { display: false }, ticks: { color: '#888' } } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        Promise.all([
+            fetch(earthquakesApiUrl).then(res => res.json()),
+            fetch(worldBordersUrl).then(res => res.json())
+        ]).then(([eqData, worldData]) => {
+            allEarthquakes = eqData.features;
+
+            allEarthquakes.forEach(eq => {
+                const lng = eq.geometry.coordinates[0];
+                const lat = eq.geometry.coordinates[1];
+                const pt = turf.point([lng, lat]);
+
+                let isLand = worldData.features.some(country => {
+                    if (country.geometry && (country.geometry.type === 'Polygon' || country.geometry.type === 'MultiPolygon')) {
+                        return turf.booleanPointInPolygon(pt, country);
+                    }
+                    return false;
+                });
+
+                eq.properties.isLand = isLand;
+            });
+
+            initChart();
+            applyGlobalFilters();
+
+            setTimeout(() => {
+                document.getElementById('loading-screen').style.opacity = '0';
+                setTimeout(() => document.getElementById('loading-screen').style.display = 'none', 500);
+            }, 500);
+        }).catch(err => console.error("Բեռնման սխալ:", err));
+
+        // --- ՆՈՐ ԴԻՆԱՄԻԿ ԱՆՑՈՒՄՆԵՐԻ ԷՖԵԿՏ ---
+        map.on('movestart', () => {
+            document.getElementById('top10-list').innerHTML = '<li style="color:#f0ad4e; justify-content:center;">🔄 Թարմացվում է...</li>';
+            document.getElementById('energy-text').innerHTML = '<span style="color:#f0ad4e; font-style: italic;">🔄 Հաշվարկվում է...</span>';
+        });
+
+        map.on('moveend', updateSidebarBasedOnView);
+
+        function flyToRegion(regionKey) {
+            document.querySelectorAll('.btn-region').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('reg-' + regionKey).classList.add('active');
+            map.flyTo(regions[regionKey].coords, regions[regionKey].zoom, { duration: 1.5 });
+            if (activePopup) map.closePopup(activePopup);
+        }
+
+        function setLocFilter(type) {
+            document.querySelectorAll('#btn-loc-all, #btn-loc-land, #btn-loc-water').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('btn-loc-' + type).classList.add('active');
+            currentFilters.location = type;
+            applyGlobalFilters();
+        }
+
+        function setDepthFilter(type) {
+            document.querySelectorAll('#btn-depth-all, #btn-depth-shallow, #btn-depth-deep').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('btn-depth-' + type).classList.add('active');
+            currentFilters.depth = type;
+            applyGlobalFilters();
+        }
+
+        function setMagFilter(value) {
+            document.getElementById('mag-label').innerText = `Մինիմում: ${value}`;
+            currentFilters.minMag = parseFloat(value);
+            applyGlobalFilters();
+        }
+
+        function applyGlobalFilters() {
+            globalFilteredData = allEarthquakes.filter(f => {
+                const depth = f.geometry.coordinates[2];
+                const mag = f.properties.mag;
+                const isLand = f.properties.isLand;
+
+                let locMatch = true;
+                if (currentFilters.location === 'land') locMatch = isLand === true;
+                else if (currentFilters.location === 'water') locMatch = isLand === false;
+
+                let depthMatch = currentFilters.depth === 'all' ||
+                    (currentFilters.depth === 'shallow' && depth <= 70) ||
+                    (currentFilters.depth === 'deep' && depth > 70);
+
+                return locMatch && depthMatch && mag >= currentFilters.minMag;
+            });
+
+            const heatPoints = globalFilteredData.map(f => [
+                f.geometry.coordinates[1], f.geometry.coordinates[0], f.properties.mag
+            ]);
+
+            if (heatLayer) map.removeLayer(heatLayer);
+            heatLayer = L.heatLayer(heatPoints, {
+                radius: 20, blur: 15, maxZoom: 5,
+                gradient: { 0.3: '#3498db', 0.5: '#2ecc71', 0.7: '#f1c40f', 1.0: '#e74c3c' }
+            }).addTo(map);
+
+            updateSidebarBasedOnView();
+        }
+
+        function updateSidebarBasedOnView() {
+            const currentBounds = map.getBounds();
+            const visibleFeatures = globalFilteredData.filter(f => {
+                const latLng = L.latLng(f.geometry.coordinates[1], f.geometry.coordinates[0]);
+                return currentBounds.contains(latLng);
+            });
+
+            document.getElementById('data-count').innerText = visibleFeatures.length;
+            renderTop10(visibleFeatures);
+            updateAnalytics(visibleFeatures);
+        }
+
+        function renderTop10(data) {
+            const top10 = [...data].sort((a, b) => b.properties.mag - a.properties.mag).slice(0, 10);
+            const ul = document.getElementById('top10-list');
+            ul.innerHTML = '';
+
+            if (top10.length === 0) {
+                ul.innerHTML = '<li style="color:#888; justify-content:center;">Այս գոտում տվյալներ չկան</li>';
+                return;
+            }
+
+            top10.forEach(eq => {
+                const mag = eq.properties.mag;
+                const place = eq.properties.place;
+                const coords = eq.geometry.coordinates;
+                const date = new Date(eq.properties.time).toLocaleString('hy-AM');
+                const locIcon = eq.properties.isLand ? '🌳' : '🌊';
+
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span class="mag-badge">${mag}</span>
+                    <div class="eq-info">
+                        <span class="eq-place" title="${place}">${locIcon} ${place}</span>
+                        <span class="eq-date">${date} | Խորություն: ${coords[2]} կմ</span>
+                    </div>
+                `;
+
+                li.onclick = () => {
+                    const latLng = [coords[1], coords[0]];
+                    map.flyTo(latLng, 7, { duration: 1.5 });
+                    if (activePopup) map.closePopup(activePopup);
+
+                    setTimeout(() => {
+                        activePopup = L.popup()
+                            .setLatLng(latLng)
+                            .setContent(`
+                                <div style="font-family:sans-serif;">
+                                    <b style="color:#d9534f; font-size:16px;">Մագնիտուդ ${mag}</b><br>
+                                    <span style="font-size:12px; color:#555;">${locIcon} ${place}</span><br>
+                                    <hr style="margin:5px 0; border:0; border-top:1px solid #ccc;">
+                                    <b>Խորություն:</b> ${coords[2]} կմ<br>
+                                    <b>Ժամանակ:</b> ${date}
+                                </div>
+                            `)
+                            .openOn(map);
+                    }, 1500);
+                };
+                ul.appendChild(li);
+            });
+        }
+
+        function updateAnalytics(data) {
+            let bins = [0, 0, 0, 0];
+            let maxMag = 0;
+
+            data.forEach(f => {
+                const mag = f.properties.mag;
+                if (mag > maxMag) maxMag = mag;
+
+                if (mag < 5.0) bins[0]++;
+                else if (mag < 6.0) bins[1]++;
+                else if (mag < 7.0) bins[2]++;
+                else bins[3]++;
+            });
+
+            myChart.data.datasets[0].data = bins;
+            myChart.update();
+
+            const energyDiv = document.getElementById('energy-text');
+            if (maxMag > 0) {
+                const energy = Math.pow(10, 4.8 + 1.5 * maxMag);
+                energyDiv.innerHTML = `
+                    <span style="color:#888;">Այս գոտու ամենաուժեղ ցնցումը.</span> <b style="color:#fff;">${maxMag} մագնիտուդ</b><br>
+                    <span style="color:#888;">Անջատված սեյսմիկ էներգիան մոտավորապես.</span><br>
+                    <b style="color:#e74c3c; font-size:16px;">${energy.toExponential(2)} Ջոուլ</b>
+                `;
+            } else {
+                energyDiv.innerHTML = "Այս տեսանելի գոտում համապատասխան տվյալներ չեն գտնվել:";
+            }
+        }
+    </script>
+</body>
+
+</html>
